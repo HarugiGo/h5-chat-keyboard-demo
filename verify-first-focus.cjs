@@ -145,6 +145,42 @@ async function frame(page, height, offsetTop, event = 'resize') {
       await context.close();
     }
 
+    // A temporarily short visualViewport on entry must not override CSS height.
+    // This models a measurement mismatch, not Safari's actual startup sequence.
+    const startupPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    startupPage.on('pageerror', error => report.errors.push(error.message));
+    await startupPage.addInitScript(() => {
+      const viewport = new EventTarget();
+      Object.assign(viewport, { height: 600, width: 390, offsetTop: 0, scale: 1 });
+      Object.defineProperty(window, 'visualViewport', { value: viewport });
+    });
+    await startupPage.goto(process.env.DEMO_URL || 'http://127.0.0.1:3026/');
+    await startupPage.waitForTimeout(100);
+    const checkIdle = async height => {
+      const row = await startupPage.evaluate(measure);
+      near(row.appHeight, height, 'idle CSS height ignores transient visual measurement');
+      near(row.composerBottom, height, 'idle composer reaches page bottom');
+      near(row.navTop, 0, 'idle header stays at top');
+      assert.equal(row.keyboard, 'closed');
+      assert.equal(await startupPage.locator('#chat-app').evaluate(el => el.style.getPropertyValue('--app-height')), '', 'no idle pixel-height override');
+    };
+    await checkIdle(844);
+    await frame(startupPage, 650, 0);
+    await checkIdle(844);
+    await startupPage.setViewportSize({ width: 390, height: 780 });
+    await startupPage.waitForTimeout(100);
+    await checkIdle(780);
+    await frame(startupPage, 780, 0);
+    await startupPage.locator('#message-input').focus();
+    const startupKeyboard = await frame(startupPage, 480, 0);
+    near(startupKeyboard.inset, 300, 'focus captures current CSS height after startup');
+    near(startupKeyboard.composerBottom, 480, 'keyboard layout after startup');
+    await startupPage.locator('#message-input').evaluate(el => el.blur());
+    await frame(startupPage, 780, 0);
+    await checkIdle(780);
+    await startupPage.close();
+    report.cases.push('Transient startup viewport measurements do not raise the idle composer; CSS follows idle resize, focus locks current height, close restores CSS sizing.');
+
     // Regression: viewport events before focus must update the idle baseline.
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await page.goto(process.env.DEMO_URL || 'http://127.0.0.1:3026/');

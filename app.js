@@ -9,7 +9,7 @@
   const originalMessages = messages.innerHTML;
   const viewport = window.visualViewport;
   const state = {
-    baseline: viewport?.height || innerHeight,
+    baseline: app.getBoundingClientRect().height,
     width: innerWidth,
     inset: 0,
     keyboardSession: false,
@@ -40,7 +40,14 @@
     // composer move. The independent fixed header has no JS layout updates.
     state.inset = Math.max(0, height);
     app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
-    app.style.setProperty('--app-height', `${state.baseline}px`);
+    if (state.keyboardSession) {
+      app.style.setProperty('--app-height', `${state.baseline}px`);
+    } else {
+      // Let CSS own the idle page height. A transient first visualViewport
+      // reading must not pin the composer above the actual bottom of the page.
+      app.style.removeProperty('--app-height');
+      state.baseline = app.getBoundingClientRect().height;
+    }
     app.style.setProperty('--keyboard-inset', `${state.inset}px`);
     syncComposer();
     suppressScroll();
@@ -54,9 +61,11 @@
     if (state.keyboardSession) return;
     state.focusSnapshot = { top: conversation.scrollTop, atEnd: nearEnd() };
     state.follow = state.focusSnapshot.atEnd;
-    // The idle viewport is measured before focus. Keep that same baseline for
-    // the entire open/close animation, including the first small resize frames.
+    // Freeze the rendered CSS layout only when input starts, before the OSK
+    // animation. Do not use an earlier startup visualViewport measurement.
+    state.baseline = app.getBoundingClientRect().height;
     state.keyboardSession = true;
+    app.style.setProperty('--app-height', `${state.baseline}px`);
     syncComposer();
   }
 
@@ -71,21 +80,18 @@
       state.focusSnapshot = null;
       state.inset = 0;
       state.keyboardSession = false;
-      state.baseline = viewport?.height || innerHeight;
       clearTimeout(rotationTimer);
       rotationTimer = setTimeout(() => {
-        state.baseline = viewport?.height || innerHeight;
-        applyLayout(0);
+        if (!state.keyboardSession) applyLayout(0);
       }, 350);
+    }
+    if (!state.keyboardSession) {
+      applyLayout(0);
+      if (state.pendingReset) finishReset();
+      return;
     }
     const visibleHeight = viewport?.height || innerHeight;
     let inset = Math.max(0, state.baseline - visibleHeight);
-    // Only idle resizes can change the full-height baseline. Treating small
-    // focus-time deltas as toolbar movement corrupted it during keyboard entry.
-    if (!state.keyboardSession) {
-      state.baseline = visibleHeight;
-      inset = 0;
-    }
     if (inset < 2) {
       inset = 0;
       // Some keyboards close while the textarea remains focused (Android back).
@@ -94,7 +100,6 @@
       if (state.inset > 0 || document.activeElement !== input) {
         state.keyboardSession = false;
         state.focusSnapshot = null;
-        state.baseline = visibleHeight;
       }
     }
     if (inset > 0 && state.inset === 0 && state.focusSnapshot) {
