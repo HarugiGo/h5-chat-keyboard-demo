@@ -15,7 +15,7 @@ button { cursor: pointer; }
 button:focus-visible { outline: 2px solid #2f7c5b; outline-offset: 3px; }
 [hidden] { display: none !important; }
 #chat-app { --keyboard-inset: 0px; --composer-height: 73px; --nav-height: calc(56px + env(safe-area-inset-top, 0px)); --safe-bottom: env(safe-area-inset-bottom, 0px); position: absolute; left: 50%; top: 0; width: min(100%, 760px); height: var(--app-height, 100dvh); transform: translate(-50%, var(--viewport-top, 0px)); background: #f7f7f7; overflow: hidden; }
-#chat-app[data-keyboard="open"] { --safe-bottom: 0px; }
+#chat-app { --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-inset))); }
 #chat-nav { position: absolute; inset: 0 0 auto; height: var(--nav-height); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e5e5; background: #fff; z-index: 3; }
 h1 { margin: 0; font-size: 17px; font-weight: 600; }
 #reset { border: 0; color: #666; padding: 8px 0 8px 16px; background: none; font-size: 14px; }
@@ -121,6 +121,7 @@ textarea::placeholder { color: #a3a5a6; }
     baseline: viewport?.height || innerHeight,
     width: innerWidth,
     inset: 0,
+    keyboardSession: false,
     follow: true,
     composing: false,
     focusSnapshot: null,
@@ -133,6 +134,16 @@ textarea::placeholder { color: #a3a5a6; }
   const nearEnd = () => conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop <= 32;
   const suppressScroll = () => { state.suppressUntil = performance.now() + 80; };
   const syncComposer = () => app.style.setProperty('--composer-height', `${composer.offsetHeight}px`);
+
+  function syncViewportPosition() {
+    if (viewport && Math.abs(viewport.scale - 1) > 0.05) return;
+    const top = `${Math.max(0, viewport?.offsetTop || 0)}px`;
+    if (app.style.getPropertyValue('--viewport-top') !== top) {
+      // Native viewport panning can arrive in a scroll event after its resize.
+      // Compensate in this event, not in the next requestAnimationFrame.
+      app.style.setProperty('--viewport-top', top);
+    }
+  }
 
   function updateControls() {
     $('jump-latest').hidden = nearEnd();
@@ -150,7 +161,7 @@ textarea::placeholder { color: #a3a5a6; }
     app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
     app.style.setProperty('--app-height', `${state.baseline}px`);
     app.style.setProperty('--keyboard-inset', `${state.inset}px`);
-    app.style.setProperty('--viewport-top', `${viewport?.offsetTop || 0}px`);
+    syncViewportPosition();
     syncComposer();
     suppressScroll();
     conversation.scrollTop = state.follow
@@ -160,10 +171,13 @@ textarea::placeholder { color: #a3a5a6; }
   }
 
   function capturePosition() {
-    if (state.inset > 0) return;
+    if (state.keyboardSession) return;
     state.focusSnapshot = { top: conversation.scrollTop, atEnd: nearEnd() };
     state.follow = state.focusSnapshot.atEnd;
-    state.baseline = viewport?.height || innerHeight;
+    // The idle viewport is measured before focus. Keep that same baseline for
+    // the entire open/close animation, including the first small resize frames.
+    state.keyboardSession = true;
+    syncComposer();
   }
 
   function syncViewport() {
@@ -176,6 +190,7 @@ textarea::placeholder { color: #a3a5a6; }
       input.blur();
       state.focusSnapshot = null;
       state.inset = 0;
+      state.keyboardSession = false;
       state.baseline = viewport?.height || innerHeight;
       clearTimeout(rotationTimer);
       rotationTimer = setTimeout(() => {
@@ -185,16 +200,22 @@ textarea::placeholder { color: #a3a5a6; }
     }
     const visibleHeight = viewport?.height || innerHeight;
     let inset = Math.max(0, state.baseline - visibleHeight);
-    const keyboardSession = document.activeElement === input || state.inset > 0;
-    // Browser toolbar changes and ordinary PC window resizes without focus are
-    // not keyboard events. Once a keyboard session starts, track every frame.
-    if (!keyboardSession || (state.inset === 0 && inset < 90)) {
+    // Only idle resizes can change the full-height baseline. Treating small
+    // focus-time deltas as toolbar movement corrupted it during keyboard entry.
+    if (!state.keyboardSession) {
       state.baseline = visibleHeight;
       inset = 0;
     }
     if (inset < 2) {
-      state.baseline = visibleHeight;
       inset = 0;
+      // Some keyboards close while the textarea remains focused (Android back).
+      // Unlock only after a real keyboard has returned to the original height,
+      // or after a focus session without a keyboard has ended.
+      if (state.inset > 0 || document.activeElement !== input) {
+        state.keyboardSession = false;
+        state.focusSnapshot = null;
+        state.baseline = visibleHeight;
+      }
     }
     if (inset > 0 && state.inset === 0 && state.focusSnapshot) {
       suppressScroll();
@@ -205,7 +226,16 @@ textarea::placeholder { color: #a3a5a6; }
   }
 
   function queueViewportSync() {
+    syncViewportPosition();
     if (!viewportFrame) viewportFrame = requestAnimationFrame(syncViewport);
+  }
+
+  function onViewportResize() {
+    cancelAnimationFrame(viewportFrame);
+    viewportFrame = 0;
+    // A viewport resize is already a native layout notification. Deferring its
+    // correction introduces one frame with the old keyboard/viewport geometry.
+    syncViewport();
   }
 
   function jumpLatest() {
@@ -266,7 +296,15 @@ textarea::placeholder { color: #a3a5a6; }
     jumpLatest();
   }
 
-  input.addEventListener('pointerdown', capturePosition);
+  input.addEventListener('pointerdown', event => {
+    capturePosition();
+    if (event.pointerType === 'touch' && document.activeElement !== input) {
+      // Keep focus in the original trusted gesture so the OS keyboard opens,
+      // while avoiding the browser's default scroll-into-view on the first tap.
+      event.preventDefault();
+      input.focus({ preventScroll: true });
+    }
+  });
   input.addEventListener('focus', () => {
     if (!state.focusSnapshot) capturePosition();
     queueViewportSync();
@@ -318,8 +356,8 @@ textarea::placeholder { color: #a3a5a6; }
     conversation.addEventListener(event, () => { state.suppressUntil = 0; }, { passive: true });
   }
   window.addEventListener('resize', queueViewportSync);
-  viewport?.addEventListener('resize', queueViewportSync);
-  viewport?.addEventListener('scroll', queueViewportSync);
+  viewport?.addEventListener('resize', onViewportResize);
+  viewport?.addEventListener('scroll', syncViewportPosition);
   new ResizeObserver(() => {
     const height = composer.offsetHeight;
     if (app.style.getPropertyValue('--composer-height') !== `${height}px`) {

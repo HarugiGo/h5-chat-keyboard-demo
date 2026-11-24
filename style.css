@@ -6,7 +6,7 @@ button { cursor: pointer; }
 button:focus-visible { outline: 2px solid #2f7c5b; outline-offset: 3px; }
 [hidden] { display: none !important; }
 #chat-app { --keyboard-inset: 0px; --composer-height: 73px; --nav-height: calc(56px + env(safe-area-inset-top, 0px)); --safe-bottom: env(safe-area-inset-bottom, 0px); position: absolute; left: 50%; top: 0; width: min(100%, 760px); height: var(--app-height, 100dvh); transform: translate(-50%, var(--viewport-top, 0px)); background: #f7f7f7; overflow: hidden; }
-#chat-app[data-keyboard="open"] { --safe-bottom: 0px; }
+#chat-app { --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-inset))); }
 #chat-nav { position: absolute; inset: 0 0 auto; height: var(--nav-height); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e5e5; background: #fff; z-index: 3; }
 h1 { margin: 0; font-size: 17px; font-weight: 600; }
 #reset { border: 0; color: #666; padding: 8px 0 8px 16px; background: none; font-size: 14px; }
