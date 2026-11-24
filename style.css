@@ -6,7 +6,7 @@ button { cursor: pointer; }
 button:focus-visible { outline: 2px solid #2f7c5b; outline-offset: 3px; }
 [hidden] { display: none !important; }
 #chat-app { --keyboard-inset: 0px; --composer-height: 73px; position: fixed; inset: 0 0 auto; margin: 0 auto; width: min(100%, 760px); height: var(--app-height, 100vh); height: var(--app-height, 100dvh); background: #f7f7f7; overflow: hidden; }
-#chat-app { --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-inset))); }
+#chat-app { --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-height, 0px))); }
 /* The header is a root sibling: keyboard layout never moves its container. */
 #chat-nav { position: fixed; inset: 0 0 auto; margin: 0 auto; width: min(100%, 760px); height: var(--nav-height); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e5e5; background: #fff; z-index: 4; }
 h1 { margin: 0; font-size: 17px; font-weight: 600; }

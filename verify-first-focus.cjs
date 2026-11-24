@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const report = { cases: [], errors: [], frames: [], limitations: ['Checks layout coordinates and absence of viewport-pan compensation; does not prove a fixed screen position during real browser panning.'] };
+const report = { cases: [], errors: [], frames: [], limitations: ['Mocks visual viewport geometry and verifies composer visible-bottom alignment; does not reproduce an actual iOS keyboard/compositor or prove a screen-fixed header.'] };
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 2, `${label}: ${actual} vs ${expected}`);
 
 function measure() {
@@ -26,11 +26,13 @@ function measure() {
     legacyOffset: q('chat-app').style.getPropertyValue('--viewport-top'),
     appHeight: q('chat-app').getBoundingClientRect().height,
     composerBottom: q('composer').getBoundingClientRect().bottom,
+    visualComposerBottom: q('composer').getBoundingClientRect().bottom - viewport.offsetTop,
     lastBottom: q('messages').lastElementChild.getBoundingClientRect().bottom,
     scrollTop: c.scrollTop,
     distance: c.scrollHeight - c.clientHeight - c.scrollTop,
     keyboard: q('chat-app').dataset.keyboard,
     inset: parseFloat(q('chat-app').style.getPropertyValue('--keyboard-inset')),
+    keyboardHeight: parseFloat(q('chat-app').style.getPropertyValue('--keyboard-height')),
   };
 }
 
@@ -89,33 +91,39 @@ async function frame(page, height, offsetTop, event = 'resize') {
           const row = await frame(page, height, offset);
           report.frames.push({ scene, cycle, phase: 'open', ...row });
           near(row.appHeight, 844, 'locked full height');
-          near(row.inset, 844 - height, 'keyboard height from original baseline');
+          near(row.keyboardHeight, 844 - height, 'keyboard shrink from original baseline');
+          near(row.inset, Math.max(0, 844 - height - offset), 'remaining overlap after native pan');
           near(row.navTop, 0, 'navigation stays at layout top');
           near(row.appTop, 0, 'chat container does not move');
           assert.equal(row.appTransform, 'none');
           assert.equal(row.legacyOffset, '', 'no JS viewport-pan compensation');
-          near(row.composerBottom, height, 'input stays above keyboard');
+          near(row.visualComposerBottom, height, 'input visible bottom stays above keyboard');
           if (scene === 'history') {
             near(row.scrollTop, baseline.scrollTop, 'history scrollTop');
             near(row.anchorTop, baseline.anchorTop, 'history layout position');
           } else {
             near(row.distance, 0, 'last message pinned');
-            near(baseline.lastBottom - row.lastBottom, 844 - height, 'message upward distance');
+            near(baseline.lastBottom - row.lastBottom, row.inset, 'messages use remaining overlap');
           }
           await page.waitForTimeout(20);
         }
-        // A pan-only notification must not mutate layout now. A real browser
-        // can still move the visible viewport; this mock does not prevent that.
-        const beforePan = await page.evaluate(measure);
-        for (const offset of [120, 60, 0, 90]) {
+        // First focus can pan almost a keyboard-height; touching the history can
+        // later restore it. Keep the input at the actual visible bottom in both
+        // cases without moving the root/header or forcing document scrolling.
+        for (const offset of [300, 304, 120, 60, 0, 90]) {
           const row = await frame(page, 540, offset, 'scroll');
+          report.frames.push({ scene, cycle, phase: 'pan-and-settle', ...row });
           near(row.navTop, 0, 'pan does not change header layout');
           near(row.visualNavTop, -offset, 'visual offset is explicitly not compensated');
-          near(row.composerBottom, 540, 'pan does not change input layout');
-          assert.equal(row.appStyle, beforePan.appStyle, 'pan does not write app styles');
+          near(row.visualComposerBottom, 540, 'input has no visible gap above keyboard during pan');
+          near(row.appTop, 0, 'pan never moves app origin');
+          near(row.appHeight, 844, 'pan never changes frozen app height');
+          assert.equal(row.appTransform, 'none');
+          assert.equal(row.legacyOffset, '');
+          assert.equal(row.keyboard, 'open', 'full native pan is still an open keyboard');
           await page.waitForTimeout(20);
           const settled = await page.evaluate(measure);
-          assert.equal(settled.appStyle, beforePan.appStyle, 'no deferred pan compensation');
+          near(settled.visualComposerBottom, 540, 'no delayed input drift');
           near(settled.navTop, 0, 'no deferred header movement');
           if (scene === 'history') near(row.anchorTop, baseline.anchorTop, 'history layout during pan');
         }
@@ -123,7 +131,7 @@ async function frame(page, height, offsetTop, event = 'resize') {
         for (const height of [490, 520, 540]) {
           const row = await frame(page, height, 90);
           near(row.appHeight, 844, 'candidate bar keeps baseline');
-          near(row.composerBottom, height, 'candidate bar input position');
+          near(row.visualComposerBottom, height, 'candidate bar input position');
         }
         if (cycle !== 1) await page.locator('#message-input').evaluate(el => el.blur());
         // cycle 1 models Android back: the OSK closes while focus remains.
@@ -132,7 +140,7 @@ async function frame(page, height, offsetTop, event = 'resize') {
           report.frames.push({ scene, cycle, phase: 'close', ...row });
           near(row.appHeight, 844, 'close animation keeps full height');
           near(row.navTop, 0, 'closing nav position');
-          near(row.composerBottom, height, 'closing input position');
+          near(row.visualComposerBottom, height, 'closing input position');
           if (scene === 'history') near(row.anchorTop, initial.anchorTop, 'closing history position');
           await page.waitForTimeout(20);
         }
@@ -141,7 +149,7 @@ async function frame(page, height, offsetTop, event = 'resize') {
         near(closed.scrollTop, initial.scrollTop, 'repeated open/close has no drift');
       }
       assert.ok(await page.evaluate(() => focusCalls.some(call => call?.preventScroll === true)), 'initial touch focuses with preventScroll');
-      report.cases.push(`${scene}: independent fixed header, first focus + 2 reopens, 7 opening frames, pan-only events without compensation, candidate bar, 5 closing frames; no baseline/scroll drift in layout coordinates.`);
+      report.cases.push(`${scene}: first focus + 2 reopens, large initial pan then scroll recovery, no gap above keyboard, candidate bar and close; root/header never translated, history layout position preserved.`);
       await context.close();
     }
 

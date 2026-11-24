@@ -12,6 +12,7 @@
     baseline: app.getBoundingClientRect().height,
     width: innerWidth,
     inset: 0,
+    keyboardHeight: 0,
     keyboardSession: false,
     follow: true,
     composing: false,
@@ -29,17 +30,17 @@
   function updateControls() {
     $('jump-latest').hidden = nearEnd();
     $('send-button').disabled = !input.value.trim();
-    $('dismiss-keyboard').hidden = state.inset === 0;
-    app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
+    $('dismiss-keyboard').hidden = state.keyboardHeight === 0;
+    app.dataset.keyboard = state.keyboardHeight > 0 ? 'open' : 'closed';
     app.dataset.behavior = state.follow ? 'push' : 'overlay';
   }
 
-  function applyLayout(height) {
+  function applyLayout(height, keyboardHeight = 0) {
     const previousTop = conversation.scrollTop;
     // Keep the chat region at its pre-keyboard height. Only its lower edge and
     // composer move. The independent fixed header has no JS layout updates.
     state.inset = Math.max(0, height);
-    app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
+    state.keyboardHeight = Math.max(0, keyboardHeight);
     if (state.keyboardSession) {
       app.style.setProperty('--app-height', `${state.baseline}px`);
     } else {
@@ -49,6 +50,7 @@
       state.baseline = app.getBoundingClientRect().height;
     }
     app.style.setProperty('--keyboard-inset', `${state.inset}px`);
+    app.style.setProperty('--keyboard-height', `${state.keyboardHeight}px`);
     syncComposer();
     suppressScroll();
     conversation.scrollTop = state.follow
@@ -79,6 +81,7 @@
       input.blur();
       state.focusSnapshot = null;
       state.inset = 0;
+      state.keyboardHeight = 0;
       state.keyboardSession = false;
       clearTimeout(rotationTimer);
       rotationTimer = setTimeout(() => {
@@ -91,23 +94,31 @@
       return;
     }
     const visibleHeight = viewport?.height || innerHeight;
-    let inset = Math.max(0, state.baseline - visibleHeight);
-    if (inset < 2) {
-      inset = 0;
+    let keyboardHeight = Math.max(0, state.baseline - visibleHeight);
+    if (keyboardHeight < 2) {
+      keyboardHeight = 0;
       // Some keyboards close while the textarea remains focused (Android back).
       // Unlock only after a real keyboard has returned to the original height,
       // or after a focus session without a keyboard has ended.
-      if (state.inset > 0 || document.activeElement !== input) {
+      if (state.keyboardHeight > 0 || document.activeElement !== input) {
         state.keyboardSession = false;
         state.focusSnapshot = null;
       }
     }
-    if (inset > 0 && state.inset === 0 && state.focusSnapshot) {
+    if (keyboardHeight > 0 && state.keyboardHeight === 0 && state.focusSnapshot) {
       suppressScroll();
       conversation.scrollTop = state.focusSnapshot.top;
     }
-    applyLayout(inset);
-    if (!inset && state.pendingReset) finishReset();
+    // Height alone is not a bottom coordinate. If the browser pans the visual
+    // viewport on first focus, lifting by baseline-height lifts the input twice.
+    // Only inset the chat's lower edge by the overlap that actually remains.
+    // Never translate the app/header or force the document scroll position.
+    const visibleBottom = visibleHeight + (viewport?.offsetTop || 0);
+    const inset = keyboardHeight > 0
+      ? Math.max(0, app.getBoundingClientRect().bottom - visibleBottom)
+      : 0;
+    applyLayout(inset, keyboardHeight);
+    if (!keyboardHeight && state.pendingReset) finishReset();
   }
 
   function queueViewportSync() {
@@ -215,7 +226,7 @@
   $('jump-latest').addEventListener('click', jumpLatest);
   $('dismiss-keyboard').addEventListener('click', dismissKeyboard);
   $('back').addEventListener('click', () => {
-    if (state.inset || document.activeElement === input) dismissKeyboard();
+    if (state.keyboardHeight || document.activeElement === input) dismissKeyboard();
     else {
       suppressScroll();
       state.follow = false;
@@ -228,7 +239,7 @@
     state.timers.clear();
     state.pendingReset = true;
     dismissKeyboard();
-    if (state.inset === 0) finishReset();
+    if (state.keyboardHeight === 0) finishReset();
   });
   conversation.addEventListener('scroll', () => {
     if (performance.now() < state.suppressUntil) return;
@@ -241,6 +252,11 @@
   }
   window.addEventListener('resize', queueViewportSync);
   viewport?.addEventListener('resize', onViewportResize);
+  viewport?.addEventListener('scroll', () => {
+    // Native panning may settle only after a touch/scroll. Update the remaining
+    // input overlap on that event too; the root and navigation stay untouched.
+    if (state.keyboardSession) onViewportResize();
+  });
   new ResizeObserver(() => {
     const height = composer.offsetHeight;
     if (app.style.getPropertyValue('--composer-height') !== `${height}px`) {
