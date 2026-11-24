@@ -29,6 +29,8 @@ async function history(page) {
       let before=await page.evaluate(measure);
       assert.equal(before.overflow,false);assert.ok(before.distance<2);
       close(before.app.width,Math.min(width,760),'自适应宽度');
+      close(before.nav.width,before.app.width,'独立顶导与聊天区域等宽');
+      close(before.nav.left,before.app.left,'独立顶导与聊天区域对齐');
       await page.locator('#message-input').click();await wait(page);
       assert.equal((await page.evaluate(measure)).keyboard,'closed','自动化/电脑没有系统键盘时不画假键盘');
       await page.setViewportSize({width,height:540});await wait(page);

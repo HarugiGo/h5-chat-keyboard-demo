@@ -26,16 +26,6 @@
   const suppressScroll = () => { state.suppressUntil = performance.now() + 80; };
   const syncComposer = () => app.style.setProperty('--composer-height', `${composer.offsetHeight}px`);
 
-  function syncViewportPosition() {
-    if (viewport && Math.abs(viewport.scale - 1) > 0.05) return;
-    const top = `${Math.max(0, viewport?.offsetTop || 0)}px`;
-    if (app.style.getPropertyValue('--viewport-top') !== top) {
-      // Native viewport panning can arrive in a scroll event after its resize.
-      // Compensate in this event, not in the next requestAnimationFrame.
-      app.style.setProperty('--viewport-top', top);
-    }
-  }
-
   function updateControls() {
     $('jump-latest').hidden = nearEnd();
     $('send-button').disabled = !input.value.trim();
@@ -46,13 +36,12 @@
 
   function applyLayout(height) {
     const previousTop = conversation.scrollTop;
-    // Keep the whole page at its pre-keyboard height. Only the conversation's
-    // lower edge and composer move. Never move the navigation with the messages.
+    // Keep the chat region at its pre-keyboard height. Only its lower edge and
+    // composer move. The independent fixed header has no JS layout updates.
     state.inset = Math.max(0, height);
     app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
     app.style.setProperty('--app-height', `${state.baseline}px`);
     app.style.setProperty('--keyboard-inset', `${state.inset}px`);
-    syncViewportPosition();
     syncComposer();
     suppressScroll();
     conversation.scrollTop = state.follow
@@ -117,7 +106,6 @@
   }
 
   function queueViewportSync() {
-    syncViewportPosition();
     if (!viewportFrame) viewportFrame = requestAnimationFrame(syncViewport);
   }
 
@@ -248,7 +236,6 @@
   }
   window.addEventListener('resize', queueViewportSync);
   viewport?.addEventListener('resize', onViewportResize);
-  viewport?.addEventListener('scroll', syncViewportPosition);
   new ResizeObserver(() => {
     const height = composer.offsetHeight;
     if (app.style.getPropertyValue('--composer-height') !== `${height}px`) {
