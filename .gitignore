@@ -1,0 +1,8 @@
+.DS_Store
+.archive/
+node_modules/
+验证截图/
+验证记录.json
+*.log
+
+键盘对接说明.md

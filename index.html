@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+  <meta name="theme-color" content="#f5f5f7">
+  <meta name="description" content="使用系统键盘的 H5 对话：消息末尾上推，历史消息保持原位。">
+  <title>AI小康 · 对话</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="chat-app" data-keyboard="closed" data-behavior="push">
+    <header id="chat-nav">
+      <button id="back" type="button" aria-label="收起键盘或回到会话开头"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+      <h1>AI小康</h1>
+      <button id="reset" type="button">重置</button>
+    </header>
+    <section id="conversation" aria-label="聊天记录，可上下滚动" tabindex="0">
+      <div id="messages">
+        <p class="date">今天</p>
+        <article class="message user"><p>你好，我想试一下这个对话页面。</p></article>
+        <article class="message assistant"><p>你好，你可以在下方输入内容，也可以上下滚动查看历史消息。</p></article>
+        <article class="message user"><p>这里的对话是真实生成的吗？</p></article>
+        <article class="message assistant"><p>这些是写好的演示对话。你发送的新消息会显示在这里，小康会给出固定回复。</p></article>
+        <article class="message user"><p>我想重点看输入键盘弹出时的效果。</p></article>
+        <article class="message assistant"><p>可以。先滑到消息最下方，再点击输入框，看看最新消息的位置。</p></article>
+        <article class="message user" id="history-anchor"><p>如果我正在翻看前面的聊天记录呢？</p></article>
+        <article class="message assistant"><p>你可以向上滚动一段距离，然后点击输入框。
+
+此时正在阅读的消息会留在原处，下方内容被键盘遮住。</p></article>
+        <article class="message user"><p>顶部标题会跟着一起移动吗？</p></article>
+        <article class="message assistant"><p>顶部导航保持固定。消息区单独滚动，输入框跟随键盘的位置调整。</p></article>
+        <article class="message user"><p>输入内容后，点击发送就可以了吗？</p></article>
+        <article class="message assistant"><p>是的。可以点击发送，也可以按回车。电脑上用 Shift + Enter 换行。</p></article>
+        <article class="message user"><p>好的，我现在来试一下。</p></article>
+        <article class="message assistant"><p>这里是最后一条演示消息。
+
+点击下方输入框，开始输入吧。</p></article>
+      </div>
+    </section>
+    <button id="jump-latest" type="button" aria-label="回到最新消息" hidden>↓ 最新消息</button>
+    <form id="composer" autocomplete="off">
+      <div class="detail-composer">
+      <textarea id="message-input" name="message" rows="1" maxlength="3000" placeholder="有问题，问小康" aria-label="输入消息" inputmode="text" enterkeyhint="send" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+      <button id="dismiss-keyboard" type="button" hidden>收起</button>
+      <button id="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+      </div>
+      <p class="detail-ai-note">内容由AI生成，请谨慎甄别</p>
+    </form>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

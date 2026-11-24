@@ -1,0 +1,11 @@
+{
+  "name": "h5-chat-keyboard-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "check": "node --check app.js && node --check server.mjs && node --check build.mjs",
+    "build": "node build.mjs"
+  }
+}

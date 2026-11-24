@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+  <meta name="theme-color" content="#f5f5f7">
+  <meta name="description" content="使用系统键盘的 H5 对话：消息末尾上推，历史消息保持原位。">
+  <title>AI小康 · 对话</title>
+  <style>
+* { box-sizing: border-box; }
+:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: #222; background: #eee; }
+html, body { position: fixed; inset: 0; margin: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
+button, textarea { font: inherit; -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:focus-visible { outline: 2px solid #2f7c5b; outline-offset: 3px; }
+[hidden] { display: none !important; }
+#chat-app { --keyboard-inset: 0px; --composer-height: 73px; --nav-height: calc(56px + env(safe-area-inset-top, 0px)); --safe-bottom: env(safe-area-inset-bottom, 0px); position: absolute; left: 50%; top: 0; width: min(100%, 760px); height: var(--app-height, 100dvh); transform: translate(-50%, var(--viewport-top, 0px)); background: #f7f7f7; overflow: hidden; }
+#chat-app[data-keyboard="open"] { --safe-bottom: 0px; }
+#chat-nav { position: absolute; inset: 0 0 auto; height: var(--nav-height); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e5e5; background: #fff; z-index: 3; }
+h1 { margin: 0; font-size: 17px; font-weight: 600; }
+#reset { border: 0; color: #666; padding: 8px 0 8px 16px; background: none; font-size: 14px; }
+#conversation { position: absolute; top: var(--nav-height); bottom: calc(var(--composer-height) + var(--keyboard-inset)); left: 0; right: 0; overflow-y: auto; overflow-x: hidden; overflow-anchor: none; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; outline: none; scrollbar-width: thin; scrollbar-color: #ddd transparent; }
+#messages { padding: 16px; min-height: 100%; overflow-anchor: none; }
+.date { text-align: center; color: #999; font-size: 12px; margin: 4px 0 24px; }
+.message { display: flex; flex-direction: column; align-items: flex-start; margin: 0 0 20px; }
+.message:last-child { margin-bottom: 0; }
+.message.user { align-items: flex-end; }
+.sender { font-size: 12px; color: #888; margin: 0 0 6px 2px; }
+.message p { margin: 0; max-width: 88%; padding: 11px 14px; border-radius: 10px; background: #fff; font-size: 16px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message.user p { background: #dcefe2; }
+#composer { position: absolute; bottom: var(--keyboard-inset); left: 0; right: 0; display: flex; align-items: flex-end; gap: 10px; margin: 0; padding: 12px 12px calc(12px + var(--safe-bottom)); border-top: 1px solid #e5e5e5; background: #fff; z-index: 3; }
+textarea { flex: 1; min-width: 0; height: 44px; max-height: 140px; margin: 0; padding: 10px 12px; line-height: 22px; font-size: 16px; color: #222; background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 8px; resize: none; outline: none; }
+textarea:focus { border-color: #83ab93; }
+textarea::placeholder { color: #999; }
+#send-button { height: 44px; padding: 0 15px; color: #fff; background: #33865c; border: 0; border-radius: 7px; font-size: 14px; flex-shrink: 0; }
+#send-button:disabled { background: #d8e2dc; color: #8e9d94; cursor: default; }
+#dismiss-keyboard { height: 44px; padding: 0; color: #666; border: 0; background: none; font-size: 13px; flex-shrink: 0; }
+#jump-latest { position: absolute; bottom: calc(var(--keyboard-inset) + var(--composer-height) + 12px); left: 50%; transform: translateX(-50%); padding: 8px 13px; border: 1px solid #ddd; border-radius: 20px; color: #666; background: #fff; font-size: 12px; z-index: 2; box-shadow: 0 2px 8px #0000000a; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (min-width: 761px) { #chat-app { border-left: 1px solid #e5e5e5; border-right: 1px solid #e5e5e5; } #messages { padding: 24px; } .message p { max-width: 80%; } }
+
+/* Reuse the established Xiaokang v5 conversation visual contract. */
+:root { --green: #17cb8e; --green-soft: rgba(23,203,142,.12); --ink: #222; --muted: #858687; --bg: #f5f5f7; font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif; background: #edf1ee; }
+#chat-app { background: var(--bg); --nav-height: calc(52px + env(safe-area-inset-top,0px)); }
+#chat-nav { display: grid; grid-template-columns: 70px 1fr 70px; padding: env(safe-area-inset-top,0px) 16px 0; border: 0; background: var(--bg); }
+h1 { text-align: center; font-size: 17px; font-weight: 600; line-height: 26px; }
+#back { width: 36px; height: 44px; padding: 0; display: flex; align-items: center; background: none; border: 0; color: #222; }
+svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#reset { justify-self: end; font-size: 14px; color: var(--muted); }
+#messages { padding: 12px 12px 20px; }
+.date { margin: 2px 0 20px; font-size: 11px; line-height: 18px; color: #a0a2a3; }
+.message { margin: 0 0 22px; }
+.message.assistant { margin-bottom: 22px; }
+.message.user p { max-width: min(82%, 480px); border-radius: 16px 8px 16px 16px; padding: 10px 16px; background: var(--green-soft); font-size: 15px; line-height: 24px; }
+.message.assistant p { width: 100%; max-width: 100%; border-radius: 8px 16px 16px 16px; padding: 14px 14px 16px; background: rgba(255,255,255,.60); font-size: 14px; line-height: 23px; }
+#composer { display: block; border: 0; padding: 12px 12px calc(10px + var(--safe-bottom)); background: var(--bg); }
+.detail-composer { display: flex; align-items: center; min-height: 52px; padding: 3px 8px 3px 16px; gap: 4px; border: 1px solid rgba(255,255,255,.9); border-radius: 30px; background: rgba(255,255,255,.86); box-shadow: 0 3px 16px rgba(31,60,49,.035); }
+textarea { height: 26px; max-height: 130px; padding: 0; border: 0; border-radius: 0; background: none; font-size: 16px; line-height: 26px; color: var(--ink); }
+textarea::placeholder { color: #a3a5a6; }
+#send-button { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-radius: 50%; margin: 4px; background: var(--green); }
+#send-button:disabled { color: #fff; background: var(--green); opacity: .4; }
+#send-button svg { width: 22px; height: 22px; }
+#dismiss-keyboard { padding: 0 5px; font-size: 12px; color: var(--muted); }
+.detail-ai-note { margin: 7px 0 0; text-align: center; color: #b4b6b7; font-size: 10px; line-height: 15px; }
+
+</style>
+</head>
+<body>
+  <main id="chat-app" data-keyboard="closed" data-behavior="push">
+    <header id="chat-nav">
+      <button id="back" type="button" aria-label="收起键盘或回到会话开头"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+      <h1>AI小康</h1>
+      <button id="reset" type="button">重置</button>
+    </header>
+    <section id="conversation" aria-label="聊天记录，可上下滚动" tabindex="0">
+      <div id="messages">
+        <p class="date">今天</p>
+        <article class="message user"><p>你好，我想试一下这个对话页面。</p></article>
+        <article class="message assistant"><p>你好，你可以在下方输入内容，也可以上下滚动查看历史消息。</p></article>
+        <article class="message user"><p>这里的对话是真实生成的吗？</p></article>
+        <article class="message assistant"><p>这些是写好的演示对话。你发送的新消息会显示在这里，小康会给出固定回复。</p></article>
+        <article class="message user"><p>我想重点看输入键盘弹出时的效果。</p></article>
+        <article class="message assistant"><p>可以。先滑到消息最下方，再点击输入框，看看最新消息的位置。</p></article>
+        <article class="message user" id="history-anchor"><p>如果我正在翻看前面的聊天记录呢？</p></article>
+        <article class="message assistant"><p>你可以向上滚动一段距离，然后点击输入框。
+
+此时正在阅读的消息会留在原处，下方内容被键盘遮住。</p></article>
+        <article class="message user"><p>顶部标题会跟着一起移动吗？</p></article>
+        <article class="message assistant"><p>顶部导航保持固定。消息区单独滚动，输入框跟随键盘的位置调整。</p></article>
+        <article class="message user"><p>输入内容后，点击发送就可以了吗？</p></article>
+        <article class="message assistant"><p>是的。可以点击发送，也可以按回车。电脑上用 Shift + Enter 换行。</p></article>
+        <article class="message user"><p>好的，我现在来试一下。</p></article>
+        <article class="message assistant"><p>这里是最后一条演示消息。
+
+点击下方输入框，开始输入吧。</p></article>
+      </div>
+    </section>
+    <button id="jump-latest" type="button" aria-label="回到最新消息" hidden>↓ 最新消息</button>
+    <form id="composer" autocomplete="off">
+      <div class="detail-composer">
+      <textarea id="message-input" name="message" rows="1" maxlength="3000" placeholder="有问题，问小康" aria-label="输入消息" inputmode="text" enterkeyhint="send" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+      <button id="dismiss-keyboard" type="button" hidden>收起</button>
+      <button id="send-button" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+      </div>
+      <p class="detail-ai-note">内容由AI生成，请谨慎甄别</p>
+    </form>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const app = $('chat-app');
+  const conversation = $('conversation');
+  const messages = $('messages');
+  const input = $('message-input');
+  const composer = $('composer');
+  const originalMessages = messages.innerHTML;
+  const viewport = window.visualViewport;
+  const state = {
+    baseline: viewport?.height || innerHeight,
+    width: innerWidth,
+    inset: 0,
+    follow: true,
+    composing: false,
+    focusSnapshot: null,
+    suppressUntil: 0,
+    pendingReset: false,
+    timers: new Set(),
+  };
+  let viewportFrame = 0;
+  let rotationTimer = 0;
+  const nearEnd = () => conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop <= 32;
+  const suppressScroll = () => { state.suppressUntil = performance.now() + 80; };
+  const syncComposer = () => app.style.setProperty('--composer-height', `${composer.offsetHeight}px`);
+
+  function updateControls() {
+    $('jump-latest').hidden = nearEnd();
+    $('send-button').disabled = !input.value.trim();
+    $('dismiss-keyboard').hidden = state.inset === 0;
+    app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
+    app.dataset.behavior = state.follow ? 'push' : 'overlay';
+  }
+
+  function applyLayout(height) {
+    const previousTop = conversation.scrollTop;
+    // Keep the whole page at its pre-keyboard height. Only the conversation's
+    // lower edge and composer move. Never move the navigation with the messages.
+    state.inset = Math.max(0, height);
+    app.dataset.keyboard = state.inset > 0 ? 'open' : 'closed';
+    app.style.setProperty('--app-height', `${state.baseline}px`);
+    app.style.setProperty('--keyboard-inset', `${state.inset}px`);
+    app.style.setProperty('--viewport-top', `${viewport?.offsetTop || 0}px`);
+    syncComposer();
+    suppressScroll();
+    conversation.scrollTop = state.follow
+      ? conversation.scrollHeight - conversation.clientHeight
+      : previousTop;
+    updateControls();
+  }
+
+  function capturePosition() {
+    if (state.inset > 0) return;
+    state.focusSnapshot = { top: conversation.scrollTop, atEnd: nearEnd() };
+    state.follow = state.focusSnapshot.atEnd;
+    state.baseline = viewport?.height || innerHeight;
+  }
+
+  function syncViewport() {
+    viewportFrame = 0;
+    if (viewport && Math.abs(viewport.scale - 1) > 0.05) return;
+    // An orientation change invalidates the full-height baseline. Wait for the
+    // OS keyboard to dismiss before capturing the new orientation's dimensions.
+    if (Math.abs(innerWidth - state.width) > 50) {
+      state.width = innerWidth;
+      input.blur();
+      state.focusSnapshot = null;
+      state.inset = 0;
+      state.baseline = viewport?.height || innerHeight;
+      clearTimeout(rotationTimer);
+      rotationTimer = setTimeout(() => {
+        state.baseline = viewport?.height || innerHeight;
+        applyLayout(0);
+      }, 350);
+    }
+    const visibleHeight = viewport?.height || innerHeight;
+    let inset = Math.max(0, state.baseline - visibleHeight);
+    const keyboardSession = document.activeElement === input || state.inset > 0;
+    // Browser toolbar changes and ordinary PC window resizes without focus are
+    // not keyboard events. Once a keyboard session starts, track every frame.
+    if (!keyboardSession || (state.inset === 0 && inset < 90)) {
+      state.baseline = visibleHeight;
+      inset = 0;
+    }
+    if (inset < 2) {
+      state.baseline = visibleHeight;
+      inset = 0;
+    }
+    if (inset > 0 && state.inset === 0 && state.focusSnapshot) {
+      suppressScroll();
+      conversation.scrollTop = state.focusSnapshot.top;
+    }
+    applyLayout(inset);
+    if (!inset && state.pendingReset) finishReset();
+  }
+
+  function queueViewportSync() {
+    if (!viewportFrame) viewportFrame = requestAnimationFrame(syncViewport);
+  }
+
+  function jumpLatest() {
+    state.follow = true;
+    suppressScroll();
+    conversation.scrollTop = conversation.scrollHeight;
+    updateControls();
+  }
+
+  function resizeInput() {
+    const top = conversation.scrollTop;
+    input.style.height = '26px';
+    input.style.height = `${Math.min(130, input.scrollHeight)}px`;
+    syncComposer();
+    suppressScroll();
+    conversation.scrollTop = state.follow ? conversation.scrollHeight : top;
+    updateControls();
+  }
+
+  function appendMessage(role, text) {
+    const article = document.createElement('article');
+    article.className = `message ${role}`;
+    const body = document.createElement('p');
+    body.textContent = text;
+    article.append(body);
+    messages.append(article);
+    if (state.follow) jumpLatest();
+    else updateControls();
+    if (role === 'assistant') $('announcer').textContent = text;
+  }
+
+  function sendMessage() {
+    const text = input.value.trim();
+    if (!text || state.composing) return;
+    state.follow = true;
+    appendMessage('user', text);
+    input.value = '';
+    resizeInput();
+    const timer = setTimeout(() => {
+      state.timers.delete(timer);
+      appendMessage('assistant', '这里是一个固定恢复');
+    }, 350);
+    state.timers.add(timer);
+  }
+
+  function dismissKeyboard() {
+    input.blur();
+    state.focusSnapshot = null;
+    queueViewportSync();
+  }
+
+  function finishReset() {
+    state.pendingReset = false;
+    messages.innerHTML = originalMessages;
+    input.value = '';
+    state.follow = true;
+    resizeInput();
+    jumpLatest();
+  }
+
+  input.addEventListener('pointerdown', capturePosition);
+  input.addEventListener('focus', () => {
+    if (!state.focusSnapshot) capturePosition();
+    queueViewportSync();
+  });
+  input.addEventListener('blur', () => {
+    state.focusSnapshot = null;
+    setTimeout(queueViewportSync, 100);
+  });
+  input.addEventListener('input', resizeInput);
+  input.addEventListener('compositionstart', () => { state.composing = true; });
+  input.addEventListener('compositionend', () => { state.composing = false; resizeInput(); });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !state.composing && event.keyCode !== 229) {
+      event.preventDefault();
+      sendMessage();
+    }
+    if (event.key === 'Escape') dismissKeyboard();
+  });
+  composer.addEventListener('submit', event => { event.preventDefault(); sendMessage(); });
+  $('send-button').addEventListener('pointerdown', event => {
+    if (document.activeElement === input) event.preventDefault();
+  });
+  $('jump-latest').addEventListener('pointerdown', event => event.preventDefault());
+  $('jump-latest').addEventListener('click', jumpLatest);
+  $('dismiss-keyboard').addEventListener('click', dismissKeyboard);
+  $('back').addEventListener('click', () => {
+    if (state.inset || document.activeElement === input) dismissKeyboard();
+    else {
+      suppressScroll();
+      state.follow = false;
+      conversation.scrollTop = 0;
+      updateControls();
+    }
+  });
+  $('reset').addEventListener('click', () => {
+    for (const timer of state.timers) clearTimeout(timer);
+    state.timers.clear();
+    state.pendingReset = true;
+    dismissKeyboard();
+    if (state.inset === 0) finishReset();
+  });
+  conversation.addEventListener('scroll', () => {
+    if (performance.now() < state.suppressUntil) return;
+    state.follow = nearEnd();
+    state.focusSnapshot = null;
+    updateControls();
+  }, { passive: true });
+  for (const event of ['wheel', 'touchmove']) {
+    conversation.addEventListener(event, () => { state.suppressUntil = 0; }, { passive: true });
+  }
+  window.addEventListener('resize', queueViewportSync);
+  viewport?.addEventListener('resize', queueViewportSync);
+  viewport?.addEventListener('scroll', queueViewportSync);
+  new ResizeObserver(() => {
+    const height = composer.offsetHeight;
+    if (app.style.getPropertyValue('--composer-height') !== `${height}px`) {
+      const top = conversation.scrollTop;
+      syncComposer();
+      suppressScroll();
+      conversation.scrollTop = state.follow ? conversation.scrollHeight : top;
+      updateControls();
+    }
+  }).observe(composer);
+  syncViewport();
+  resizeInput();
+  requestAnimationFrame(jumpLatest);
+})();
+
+</script>
+</body>
+</html>
